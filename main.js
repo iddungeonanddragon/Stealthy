@@ -1,4 +1,4 @@
-import OBR from "https://esm.sh/@owlbear-rodeo/sdk@3.0.0";
+import OBR from "https://cdn.jsdelivr.net/npm/@owlbear-rodeo/sdk@3.0.0/+esm";
 
 const METADATA_KEY = "custom.stealth-tracker/state";
 
@@ -6,6 +6,7 @@ let currentRole = "PLAYER";
 let currentPlayerId = "";
 let partyPlayers = [];
 let trackerEntries = [];
+let initialized = false;
 
 const roleBadge = document.getElementById("role-badge");
 const controlsEl = document.getElementById("controls");
@@ -30,6 +31,7 @@ function syncEntriesFromMetadata(metadata) {
 
 OBR.onReady(async () => {
   try {
+    initialized = true;
     currentRole = await OBR.player.getRole();
     currentPlayerId = await OBR.player.getId();
     roleBadge.textContent = currentRole;
@@ -49,9 +51,17 @@ OBR.onReady(async () => {
     });
   } catch (err) {
     console.error("Stealth Tracker init error:", err);
-    listEl.innerHTML = `<div class="empty">Gagal terhubung ke scene Owlbear.</div>`;
+    roleBadge.textContent = "Error";
+    listEl.innerHTML = `<div class="empty">Gagal terhubung ke Owlbear Rodeo. Cek Console (F12).</div>`;
   }
 });
+
+setTimeout(() => {
+  if (!initialized) {
+    roleBadge.textContent = "Timeout";
+    listEl.innerHTML = `<div class="empty">OBR.onReady tidak merespons. Pastikan extension dibuka di dalam room Owlbear Rodeo & cek Console (F12).</div>`;
+  }
+}, 4000);
 
 async function saveEntries(newEntries) {
   trackerEntries = newEntries;
@@ -176,3 +186,35 @@ function render() {
               style="width:48px;padding:3px 4px;font-weight:700;color:#a892ff;"
               onchange="updateRoll('${entry.id}', this.value)"
             />`
+          : `<span class="roll-val">${entry.roll}</span>`;
+
+      const gmActions =
+        currentRole === "GM"
+          ? `
+            <button
+              style="font-size:11px;padding:2px 6px;background:${entry.hidden ? "#38b27b" : "#e05263"}"
+              onclick="toggleHidden('${entry.id}')"
+            >
+              ${entry.hidden ? "Hidden" : "Spotted"}
+            </button>
+            <button class="btn-del" onclick="deleteEntry('${entry.id}')">✕</button>
+          `
+          : `<span style="font-size:11px;color:${entry.hidden ? "#38b27b" : "#e05263"}">
+              ${entry.hidden ? "● Hidden" : "● Spotted"}
+            </span>`;
+
+      return `
+        <div class="card ${entry.hidden ? "" : "spotted"}">
+          <div class="card-header">
+            <span>${safeName}</span>
+            <div style="display:flex;align-items:center;gap:6px;">
+              ${rollDisplay}
+              ${gmActions}
+            </div>
+          </div>
+          ${playerAccessHTML}
+        </div>
+      `;
+    })
+    .join("");
+}
