@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Stealth Tracker</title>
+  <style>
+    :root {
+      --bg: #1e2028;
+      --card: #282b36;
+      --text: #f1f3f8;
+      --muted: #9aa0b4;
+      --accent: #7c5dfa;
+      --danger: #e05263;
+      --success: #38b27b;
+    }
+    body {
+      margin: 0;
+      padding: 12px;
+      font-family: system-ui, -apple-system, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      font-size: 13px;
+    }
+    h3 { margin: 0 0 10px 0; font-size: 15px; display: flex; justify-content: space-between; align-items: center; }
+    .badge { font-size: 11px; padding: 2px 6px; border-radius: 4px; background: var(--accent); }
+    .form-group { display: flex; gap: 6px; margin-bottom: 10px; }
+    input[type="text"], input[type="number"] {
+      background: var(--card); border: 1px solid #3c4052; color: var(--text);
+      padding: 6px 8px; border-radius: 6px; outline: none;
+    }
+    input[type="text"] { flex: 1; }
+    input[type="number"] { width: 55px; text-align: center; }
+    button {
+      background: var(--accent); color: white; border: none; border-radius: 6px;
+      padding: 6px 10px; cursor: pointer; font-weight: 600;
+    }
+    button:hover { opacity: 0.9; }
+    button.btn-del { background: transparent; color: var(--danger); padding: 2px 6px; }
+    .card {
+      background: var(--card); border-radius: 8px; padding: 10px; margin-bottom: 8px;
+      border-left: 3px solid var(--success);
+    }
+    .card.spotted { border-left-color: var(--danger); opacity: 0.75; }
+    .card-header { display: flex; justify-content: space-between; align-items: center; font-weight: 600; }
+    .roll-val { font-size: 16px; color: #a892ff; font-weight: 700; }
+    .players-list { margin-top: 8px; padding-top: 6px; border-top: 1px solid #383c4d; display: flex; flex-wrap: wrap; gap: 6px; }
+    .player-chip {
+      font-size: 11px; background: #1e2028; padding: 3px 6px; border-radius: 4px;
+      display: flex; align-items: center; gap: 4px; cursor: pointer;
+    }
+    .empty { color: var(--muted); text-align: center; margin-top: 24px; }
+  </style>
+</head>
+<body>
+  <h3>
+    <span>Stealth Tracker</span>
+    <span id="role-badge" class="badge">Loading...</span>
+  </h3>
+
+  <div id="controls" class="form-group" style="display:none;">
+    <input type="text" id="char-name" placeholder="Nama Karakter / NPC" />
+    <input type="number" id="stealth-val" placeholder="Roll" min="1" max="99" />
+    <button id="add-btn">+ Add</button>
+  </div>
+
+  <div id="tracker-list"></div>
+
+  <script type="module" src="./main.js"></script>
+</body>
+</html>
