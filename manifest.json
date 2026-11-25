@@ -1,0 +1,13 @@
+{
+  "name": "Stealth Tracker",
+  "version": "1.0.0",
+  "manifest_version": 1,
+  "description": "Per-player stealth tracker with GM full visibility",
+  "action": {
+    "title": "Stealth Tracker",
+    "icon": "./icon.svg",
+    "popover": "./index.html",
+    "height": 420,
+    "width": 320
+  }
+}
