@@ -1,220 +1,176 @@
 import OBR from "https://cdn.jsdelivr.net/npm/@owlbear-rodeo/sdk@3.0.0/+esm";
 
-const METADATA_KEY = "custom.stealth-tracker/state";
+const KEY = "custom.stealth-tracker/entries";
 
-let currentRole = "PLAYER";
-let currentPlayerId = "";
-let partyPlayers = [];
-let trackerEntries = [];
-let initialized = false;
+let role = "PLAYER";
+let playerId = "";
+let players = [];
+let entries = [];
+let connectedToOBR = false;
 
-const roleBadge = document.getElementById("role-badge");
-const controlsEl = document.getElementById("controls");
-const listEl = document.getElementById("tracker-list");
-const nameInput = document.getElementById("char-name");
-const valInput = document.getElementById("stealth-val");
+const roleTag = document.getElementById("role-tag");
+const nameInput = document.getElementById("name-input");
+const rollInput = document.getElementById("roll-input");
 const addBtn = document.getElementById("add-btn");
+const listEl = document.getElementById("list");
 
-function escapeHtml(str = "") {
-  return String(str)
+const esc = (s = "") =>
+  String(s)
     .replaceAll("&", "&amp;")
     .replaceAll("<", "&lt;")
     .replaceAll(">", "&gt;")
     .replaceAll('"', "&quot;");
-}
 
-function syncEntriesFromMetadata(metadata) {
-  const raw = metadata?.[METADATA_KEY]?.entries;
-  trackerEntries = Array.isArray(raw) ? raw : [];
+function applyMetadata(meta) {
+  const saved = meta?.[KEY];
+  entries = Array.isArray(saved) ? saved : [];
   render();
 }
 
 OBR.onReady(async () => {
   try {
-    initialized = true;
-    currentRole = await OBR.player.getRole();
-    currentPlayerId = await OBR.player.getId();
-    roleBadge.textContent = currentRole;
-    controlsEl.style.display = "flex";
+    connectedToOBR = true;
+    role = await OBR.player.getRole();
+    playerId = await OBR.player.getId();
+    roleTag.textContent = role;
 
-    partyPlayers = await OBR.party.getPlayers();
-    OBR.party.onChange((players) => {
-      partyPlayers = Array.isArray(players) ? players : [];
+    players = await OBR.party.getPlayers();
+    OBR.party.onChange((list) => {
+      players = Array.isArray(list) ? list : [];
       render();
     });
 
-    const initialMeta = await OBR.scene.getMetadata();
-    syncEntriesFromMetadata(initialMeta);
+    const meta = await OBR.scene.getMetadata();
+    applyMetadata(meta);
 
-    OBR.scene.onMetadataChange((meta) => {
-      syncEntriesFromMetadata(meta);
+    OBR.scene.onMetadataChange((updatedMeta) => {
+      applyMetadata(updatedMeta);
     });
   } catch (err) {
-    console.error("Stealth Tracker init error:", err);
-    roleBadge.textContent = "Error";
-    listEl.innerHTML = `<div class="empty">Gagal terhubung ke Owlbear Rodeo. Cek Console (F12).</div>`;
+    console.error(err);
+    roleTag.textContent = "Offline";
+    render();
   }
 });
 
-setTimeout(() => {
-  if (!initialized) {
-    roleBadge.textContent = "Timeout";
-    listEl.innerHTML = `<div class="empty">OBR.onReady tidak merespons. Pastikan extension dibuka di dalam room Owlbear Rodeo & cek Console (F12).</div>`;
-  }
-}, 4000);
-
-async function saveEntries(newEntries) {
-  trackerEntries = newEntries;
+async function persist(nextEntries) {
+  entries = nextEntries;
   render();
-  await OBR.scene.setMetadata({
-    [METADATA_KEY]: { entries: newEntries }
-  });
+  if (connectedToOBR) {
+    await OBR.scene.setMetadata({ [KEY]: entries });
+  }
 }
 
 addBtn.addEventListener("click", async () => {
   const name = nameInput.value.trim();
-  const roll = Number.parseInt(valInput.value, 10);
+  const roll = Number.parseInt(rollInput.value, 10);
   if (!name || Number.isNaN(roll)) return;
 
-  const newEntry = {
+  const entry = {
     id: crypto.randomUUID(),
     name,
     roll,
-    hidden: true,
-    createdBy: currentPlayerId,
+    spotted: false,
     allowedPlayers: []
   };
 
-  await saveEntries([...trackerEntries, newEntry]);
+  await persist([...entries, entry]);
   nameInput.value = "";
-  valInput.value = "";
+  rollInput.value = "";
+  nameInput.focus();
 });
 
-window.togglePlayerAccess = async (entryId, targetPlayerId) => {
-  if (currentRole !== "GM") return;
-
-  const updated = trackerEntries.map((entry) => {
-    if (entry.id !== entryId) return entry;
-    const currentAllowed = Array.isArray(entry.allowedPlayers) ? entry.allowedPlayers : [];
-    const exists = currentAllowed.includes(targetPlayerId);
-    const allowedPlayers = exists
-      ? currentAllowed.filter((id) => id !== targetPlayerId)
-      : [...currentAllowed, targetPlayerId];
-    return { ...entry, allowedPlayers };
+window.toggleAllow = async (id, targetId) => {
+  if (role !== "GM") return;
+  const next = entries.map((e) => {
+    if (e.id !== id) return e;
+    const list = Array.isArray(e.allowedPlayers) ? e.allowedPlayers : [];
+    const allowedPlayers = list.includes(targetId)
+      ? list.filter((x) => x !== targetId)
+      : [...list, targetId];
+    return { ...e, allowedPlayers };
   });
-
-  await saveEntries(updated);
+  await persist(next);
 };
 
-window.updateRoll = async (entryId, newVal) => {
-  if (currentRole !== "GM") return;
-  const roll = Number.parseInt(newVal, 10);
-  if (Number.isNaN(roll)) return;
-
-  const updated = trackerEntries.map((e) =>
-    e.id === entryId ? { ...e, roll } : e
+window.toggleSpotted = async (id) => {
+  if (role !== "GM") return;
+  const next = entries.map((e) =>
+    e.id === id ? { ...e, spotted: !e.spotted } : e
   );
-  await saveEntries(updated);
+  await persist(next);
 };
 
-window.toggleHidden = async (entryId) => {
-  if (currentRole !== "GM") return;
-  const updated = trackerEntries.map((e) =>
-    e.id === entryId ? { ...e, hidden: !e.hidden } : e
-  );
-  await saveEntries(updated);
-};
-
-window.deleteEntry = async (entryId) => {
-  if (currentRole !== "GM") return;
-  const updated = trackerEntries.filter((e) => e.id !== entryId);
-  await saveEntries(updated);
+window.removeEntry = async (id) => {
+  if (role !== "GM") return;
+  await persist(entries.filter((e) => e.id !== id));
 };
 
 function render() {
-  const visibleEntries =
-    currentRole === "GM"
-      ? trackerEntries
-      : trackerEntries.filter(
-          (entry) =>
-            Array.isArray(entry.allowedPlayers) &&
-            entry.allowedPlayers.includes(currentPlayerId)
+  const visible =
+    role === "GM"
+      ? entries
+      : entries.filter(
+          (e) => Array.isArray(e.allowedPlayers) && e.allowedPlayers.includes(playerId)
         );
 
-  if (visibleEntries.length === 0) {
-    listEl.innerHTML = `<div class="empty">Belum ada data Stealth yang diizinkan untukmu.</div>`;
+  if (visible.length === 0) {
+    listEl.innerHTML = `<div class="empty">Belum ada stealth yang tampil.</div>`;
     return;
   }
 
-  listEl.innerHTML = visibleEntries
-    .map((entry) => {
-      const allowedList = Array.isArray(entry.allowedPlayers) ? entry.allowedPlayers : [];
-      const safeName = escapeHtml(entry.name);
+  listEl.innerHTML = visible
+    .map((e) => {
+      const allowed = Array.isArray(e.allowedPlayers) ? e.allowedPlayers : [];
+      const gmControls =
+        role === "GM"
+          ? `
+            <button class="ghost" type="button" onclick="toggleSpotted('${e.id}')">
+              ${e.spotted ? "Spotted" : "Hidden"}
+            </button>
+            <button class="danger" type="button" onclick="removeEntry('${e.id}')">✕</button>
+          `
+          : `<span class="tag">${e.spotted ? "Spotted" : "Hidden"}</span>`;
 
-      const playerAccessHTML =
-        currentRole === "GM"
-          ? `<div class="players-list">
-              <span style="width:100%;font-size:10px;color:var(--muted);">Izinkan lihat:</span>
+      const playerChips =
+        role === "GM"
+          ? `
+            <div class="access">
+              <span class="access-label">Boleh dilihat player:</span>
               ${
-                partyPlayers.length === 0
-                  ? `<span style="color:var(--muted);font-size:11px;">Belum ada player di room</span>`
-                  : partyPlayers
+                players.length === 0
+                  ? `<span class="tag">Tidak ada player lain</span>`
+                  : players
                       .map((p) => {
-                        const checked = allowedList.includes(p.id) ? "checked" : "";
-                        const pName = escapeHtml(p.name || `Player ${p.id.slice(0, 4)}`);
+                        const checked = allowed.includes(p.id) ? "checked" : "";
+                        const pName = esc(p.name || p.id.slice(0, 6));
                         return `
-                          <label class="player-chip">
-                            <input
-                              type="checkbox"
-                              ${checked}
-                              onchange="togglePlayerAccess('${entry.id}', '${p.id}')"
-                            />
+                          <label class="chip">
+                            <input type="checkbox" ${checked} onchange="toggleAllow('${e.id}', '${p.id}')" />
                             ${pName}
                           </label>
                         `;
                       })
                       .join("")
               }
-            </div>`
+            </div>
+          `
           : "";
 
-      const rollDisplay =
-        currentRole === "GM"
-          ? `<input
-              type="number"
-              value="${entry.roll}"
-              style="width:48px;padding:3px 4px;font-weight:700;color:#a892ff;"
-              onchange="updateRoll('${entry.id}', this.value)"
-            />`
-          : `<span class="roll-val">${entry.roll}</span>`;
-
-      const gmActions =
-        currentRole === "GM"
-          ? `
-            <button
-              style="font-size:11px;padding:2px 6px;background:${entry.hidden ? "#38b27b" : "#e05263"}"
-              onclick="toggleHidden('${entry.id}')"
-            >
-              ${entry.hidden ? "Hidden" : "Spotted"}
-            </button>
-            <button class="btn-del" onclick="deleteEntry('${entry.id}')">✕</button>
-          `
-          : `<span style="font-size:11px;color:${entry.hidden ? "#38b27b" : "#e05263"}">
-              ${entry.hidden ? "● Hidden" : "● Spotted"}
-            </span>`;
-
       return `
-        <div class="card ${entry.hidden ? "" : "spotted"}">
-          <div class="card-header">
-            <span>${safeName}</span>
+        <div class="item ${e.spotted ? "spotted" : ""}">
+          <div class="item-head">
+            <span><strong>${esc(e.name)}</strong></span>
             <div style="display:flex;align-items:center;gap:6px;">
-              ${rollDisplay}
-              ${gmActions}
+              <span class="roll">${e.roll}</span>
+              ${gmControls}
             </div>
           </div>
-          ${playerAccessHTML}
+          ${playerChips}
         </div>
       `;
     })
     .join("");
 }
+
+render();
