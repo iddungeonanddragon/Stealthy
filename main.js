@@ -14,32 +14,48 @@ const nameInput = document.getElementById("char-name");
 const valInput = document.getElementById("stealth-val");
 const addBtn = document.getElementById("add-btn");
 
-OBR.onReady(async () => {
-  currentRole = await OBR.player.getRole();
-  currentPlayerId = await OBR.player.getId();
-  roleBadge.textContent = currentRole;
+function escapeHtml(str = "") {
+  return String(str)
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;");
+}
 
-  controlsEl.style.display = "flex";
-
-  partyPlayers = await OBR.party.getPlayers();
-  OBR.party.onChange((players) => {
-    partyPlayers = players;
-    render();
-  });
-
-  const metadata = await OBR.scene.getMetadata();
-  if (metadata[METADATA_KEY]) {
-    trackerEntries = metadata[METADATA_KEY].entries || [];
-  }
+function syncEntriesFromMetadata(metadata) {
+  const raw = metadata?.[METADATA_KEY]?.entries;
+  trackerEntries = Array.isArray(raw) ? raw : [];
   render();
+}
 
-  OBR.scene.onMetadataChange((meta) => {
-    trackerEntries = meta[METADATA_KEY]?.entries || [];
-    render();
-  });
+OBR.onReady(async () => {
+  try {
+    currentRole = await OBR.player.getRole();
+    currentPlayerId = await OBR.player.getId();
+    roleBadge.textContent = currentRole;
+    controlsEl.style.display = "flex";
+
+    partyPlayers = await OBR.party.getPlayers();
+    OBR.party.onChange((players) => {
+      partyPlayers = Array.isArray(players) ? players : [];
+      render();
+    });
+
+    const initialMeta = await OBR.scene.getMetadata();
+    syncEntriesFromMetadata(initialMeta);
+
+    OBR.scene.onMetadataChange((meta) => {
+      syncEntriesFromMetadata(meta);
+    });
+  } catch (err) {
+    console.error("Stealth Tracker init error:", err);
+    listEl.innerHTML = `<div class="empty">Gagal terhubung ke scene Owlbear.</div>`;
+  }
 });
 
 async function saveEntries(newEntries) {
+  trackerEntries = newEntries;
+  render();
   await OBR.scene.setMetadata({
     [METADATA_KEY]: { entries: newEntries }
   });
@@ -47,8 +63,8 @@ async function saveEntries(newEntries) {
 
 addBtn.addEventListener("click", async () => {
   const name = nameInput.value.trim();
-  const roll = parseInt(valInput.value, 10);
-  if (!name || isNaN(roll)) return;
+  const roll = Number.parseInt(valInput.value, 10);
+  if (!name || Number.isNaN(roll)) return;
 
   const newEntry = {
     id: crypto.randomUUID(),
@@ -69,7 +85,7 @@ window.togglePlayerAccess = async (entryId, targetPlayerId) => {
 
   const updated = trackerEntries.map((entry) => {
     if (entry.id !== entryId) return entry;
-    const currentAllowed = entry.allowedPlayers || [];
+    const currentAllowed = Array.isArray(entry.allowedPlayers) ? entry.allowedPlayers : [];
     const exists = currentAllowed.includes(targetPlayerId);
     const allowedPlayers = exists
       ? currentAllowed.filter((id) => id !== targetPlayerId)
@@ -82,8 +98,8 @@ window.togglePlayerAccess = async (entryId, targetPlayerId) => {
 
 window.updateRoll = async (entryId, newVal) => {
   if (currentRole !== "GM") return;
-  const roll = parseInt(newVal, 10);
-  if (isNaN(roll)) return;
+  const roll = Number.parseInt(newVal, 10);
+  if (Number.isNaN(roll)) return;
 
   const updated = trackerEntries.map((e) =>
     e.id === entryId ? { ...e, roll } : e
@@ -122,7 +138,8 @@ function render() {
 
   listEl.innerHTML = visibleEntries
     .map((entry) => {
-      const allowedList = entry.allowedPlayers || [];
+      const allowedList = Array.isArray(entry.allowedPlayers) ? entry.allowedPlayers : [];
+      const safeName = escapeHtml(entry.name);
 
       const playerAccessHTML =
         currentRole === "GM"
@@ -134,6 +151,7 @@ function render() {
                   : partyPlayers
                       .map((p) => {
                         const checked = allowedList.includes(p.id) ? "checked" : "";
+                        const pName = escapeHtml(p.name || `Player ${p.id.slice(0, 4)}`);
                         return `
                           <label class="player-chip">
                             <input
@@ -141,7 +159,7 @@ function render() {
                               ${checked}
                               onchange="togglePlayerAccess('${entry.id}', '${p.id}')"
                             />
-                            ${p.name}
+                            ${pName}
                           </label>
                         `;
                       })
@@ -158,35 +176,3 @@ function render() {
               style="width:48px;padding:3px 4px;font-weight:700;color:#a892ff;"
               onchange="updateRoll('${entry.id}', this.value)"
             />`
-          : `<span class="roll-val">${entry.roll}</span>`;
-
-      const gmActions =
-        currentRole === "GM"
-          ? `
-            <button
-              style="font-size:11px;padding:2px 6px;background:${entry.hidden ? "#38b27b" : "#e05263"}"
-              onclick="toggleHidden('${entry.id}')"
-            >
-              ${entry.hidden ? "Hidden" : "Spotted"}
-            </button>
-            <button class="btn-del" onclick="deleteEntry('${entry.id}')">✕</button>
-          `
-          : `<span style="font-size:11px;color:${entry.hidden ? "#38b27b" : "#e05263"}">
-              ${entry.hidden ? "● Hidden" : "● Spotted"}
-            </span>`;
-
-      return `
-        <div class="card ${entry.hidden ? "" : "spotted"}">
-          <div class="card-header">
-            <span>${entry.name}</span>
-            <div style="display:flex;align-items:center;gap:6px;">
-              ${rollDisplay}
-              ${gmActions}
-            </div>
-          </div>
-          ${playerAccessHTML}
-        </div>
-      `;
-    })
-    .join("");
-}
